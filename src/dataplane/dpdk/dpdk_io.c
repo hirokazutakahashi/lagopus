@@ -841,6 +841,10 @@ dpdk_configure_interface(struct interface *ifp) {
                                     dpdk_intr_event_callback,
                                     ifp);
     }
+    /* register link update periodic timer (temporary fix) */
+    if (ret >= 0) {
+      add_link_timer(ifp);
+    }
   } else {
     port_conf.intr_conf.lsc = 0;
     ret = rte_eth_dev_configure(portid,
