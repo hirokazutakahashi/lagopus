@@ -376,7 +376,8 @@ AC_RUN_IFELSE(
 		 [return r;]])],
 	[resultOK=1],
 	[AC_MSG_RESULT([not available.])],
-	[AC_MSG_RESULT([not checkable since cross-compilation.])])
+	[resultOK=1
+	 AC_MSG_RESULT([not checkable since cross-compilation.])])
 LIBS=${oLIBS}
 if test ${resultOK} -eq 1; then
     AC_MSG_RESULT([available.])
@@ -430,6 +431,10 @@ if test "X${dpdk}" != "Xno"; then
         ;;
         FreeBSD)
             RTE_OS=bsdapp
+            if test "x$RTE_ARCH" = "xamd64"; then
+                RTE_ARCH="x86_64"
+            fi
+            RTE_KERNEL=${SYSDIR}; export RTE_KERNELDIR
         ;;
 	*)
             AC_MSG_ERROR([DPDK must be supported your OS.])

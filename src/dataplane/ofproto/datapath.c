@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2016 Nippon Telegraph and Telephone Corporation.
+ * Copyright 2014-2017 Nippon Telegraph and Telephone Corporation.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -690,6 +690,17 @@ copy_packet(struct lagopus_packet *src_pkt) {
   return pkt;
 }
 
+static struct lagopus_packet *
+copy_packet_with_metadata(struct lagopus_packet *src_pkt) {
+  struct lagopus_packet *pkt;
+
+  pkt = copy_packet(src_pkt);
+  pkt->table_id = src_pkt->table_id;
+  pkt->oob_data = src_pkt->oob_data;
+  pkt->flow = src_pkt->flow;
+  return pkt;
+}
+
 /*
  * instructions.
  */
@@ -796,7 +807,7 @@ execute_action_set_field(struct lagopus_packet *pkt,
         OS_MEMCPY(&val16, oxm_value, sizeof(uint16_t));
         VLAN_TCI(pkt->vlan) &= OS_HTONS(0xf000);
         VLAN_TCI(pkt->vlan) |= val16 & OS_HTONS(0x0fff);
-        pkt->oob_data.vlan_tci = VLAN_TCI(pkt->vlan);
+        pkt->oob_data.vlan_tci = VLAN_TCI(pkt->vlan) | htons(OFPVID_PRESENT);
       }
       break;
 
@@ -806,7 +817,7 @@ execute_action_set_field(struct lagopus_packet *pkt,
       if (pkt->vlan != NULL) {
         VLAN_TCI(pkt->vlan) &= OS_HTONS(0x01fff);
         VLAN_TCI(pkt->vlan) |= OS_HTONS((uint16_t)(*oxm_value << 13));
-        pkt->oob_data.vlan_tci = VLAN_TCI(pkt->vlan);
+        pkt->oob_data.vlan_tci = VLAN_TCI(pkt->vlan) | htons(OFPVID_PRESENT);
       }
       break;
 
@@ -1558,8 +1569,7 @@ lagopus_send_packet_physical(struct lagopus_packet *pkt,
       break;
 #endif
     case DATASTORE_INTERFACE_TYPE_ETHERNET_RAWSOCK:
-      return rawsock_send_packet_physical(pkt,
-                                          ifp->info.eth_rawsock.port_number);
+      return rawsock_send_packet_physical(pkt,ifp);
 
     case DATASTORE_INTERFACE_TYPE_GRE:
     case DATASTORE_INTERFACE_TYPE_NVGRE:
@@ -1614,7 +1624,7 @@ send_packet_in(struct lagopus_packet *pkt,
     free(data);
     return LAGOPUS_RESULT_NO_MEMORY;
   }
-  if (pkt->oob_data.metadata != 0) {
+  if (pkt->oob_data.metadata != 0ULL) {
     metadata_match = calloc(1, sizeof(struct match) +
                             sizeof(pkt->oob_data.metadata));
     if (metadata_match == NULL) {
@@ -1652,7 +1662,7 @@ send_packet_in(struct lagopus_packet *pkt,
   /* IN_PHY_PORT for physical port is omitted. */
 
   /* METADATA */
-  if (pkt->oob_data.metadata != 0) {
+  if (pkt->oob_data.metadata != 0ULL) {
     metadata_match->oxm_field = FIELD(OFPXMT_OFB_METADATA);
     metadata_match->oxm_length = sizeof(pkt->oob_data.metadata);
     OS_MEMCPY(metadata_match->oxm_value,
@@ -1707,6 +1717,10 @@ dp_interface_tx_packet(struct lagopus_packet *pkt,
   uint32_t in_port;
 
   in_port = pkt->in_port->ofp_port.port_no;
+  if (out_port == in_port) {
+    lagopus_packet_free(pkt);
+    return;
+  }
 
   switch (out_port) {
     case OFPP_TABLE:
@@ -1823,7 +1837,11 @@ execute_action_output(struct lagopus_packet *pkt,
   DP_PRINT("action output: %d\n", port);
   if (unlikely(action->flags == OUTPUT_COPIED_PACKET)) {
     /* send copied packet */
-    dp_interface_tx_packet(copy_packet(pkt), port, action->cookie);
+    if (port == OFPP_CONTROLLER) {
+      dp_interface_tx_packet(copy_packet_with_metadata(pkt), port, action->cookie);
+    } else {
+      dp_interface_tx_packet(copy_packet(pkt), port, action->cookie);
+    }
     rv = LAGOPUS_RESULT_OK;
   } else {
     if ((pkt->flags & PKT_FLAG_CACHED_FLOW) == 0 && pkt->cache != NULL &&
@@ -2013,6 +2031,7 @@ execute_action_decap(struct lagopus_packet *pkt,
 
     case (OFPHTN_IP_PROTO << 16) | IPPROTO_GRE:
       switch (OS_NTOHS(pkt->gre->ptype)) {
+        case 0x6558:
         case 0x880b:
           new_type = ((OFPHTN_ONF << 16) | OFPHTO_ETHERNET);
           break;

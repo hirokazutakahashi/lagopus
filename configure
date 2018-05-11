@@ -17944,7 +17944,8 @@ LIBS='-lgmp'
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking mpz_init_set_str" >&5
 $as_echo_n "checking mpz_init_set_str... " >&6; }
 if test "$cross_compiling" = yes; then :
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: not checkable since cross-compilation." >&5
+  resultOK=1
+	 { $as_echo "$as_me:${as_lineno-$LINENO}: result: not checkable since cross-compilation." >&5
 $as_echo "not checkable since cross-compilation." >&6; }
 else
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
@@ -18088,6 +18089,10 @@ if test "X${dpdk}" != "Xno"; then
         ;;
         FreeBSD)
             RTE_OS=bsdapp
+            if test "x$RTE_ARCH" = "xamd64"; then
+                RTE_ARCH="x86_64"
+            fi
+            RTE_KERNEL=${SYSDIR}; export RTE_KERNELDIR
         ;;
 	*)
             as_fn_error $? "DPDK must be supported your OS." "$LINENO" 5
